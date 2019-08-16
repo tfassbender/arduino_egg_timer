@@ -36,6 +36,7 @@ int lastPos = LOW;
 int n = LOW;
 int button = LOW;
 int lastButton = LOW;
+unsigned long rotary_encoder_button_debounce;
 
 //PASSIVE BUZZER
 #define BUZZER_PIN 4
@@ -59,6 +60,7 @@ unsigned long reset_debounce;
 //VARIABLES for controlling the countdown clock
 boolean counting = false;
 boolean alarm_playing = false;
+boolean countdown_paused = false;
 unsigned long time = 0;//the current time in seconds
 unsigned long start_time = 0;//the start time of the counter (changes during countdown)
 const unsigned long time_count_interval = 1000;//inverval of 1 second 
@@ -78,6 +80,7 @@ void setup() {
   //set the button pins to input
   pinMode(START_STOP_BUTTON_PIN, INPUT);
   pinMode(RESET_BUTTON_PIN, INPUT);
+  Serial.begin(9600);
 }
 
 void loop() {
@@ -118,7 +121,7 @@ void getTimeSetterSignal() {
   }
   lastPos = n;
   
-  if (!counting && !alarm_playing && updateClock) {
+  if (!counting && !alarm_playing && !countdown_paused && updateClock) {
     updateClock = false;
     updateClockDisplay();
   }
@@ -129,13 +132,16 @@ void handleButtons() {
     if (alarm_playing) {
       stopAlarm();
     }
-    else if (time > 0 || rotaryEncoderPos > 0) {
+    else if (time > 0 || rotaryEncoderPos != 0) {
       counting = !counting;
       if (counting) {
         start_time = millis();
-        if (time == 0 && rotaryEncoderPos > 0) {
+        if (time == 0 && rotaryEncoderPos != 0) {
           time = getTimeSeconds(rotaryEncoderPos);
         }
+      }
+      else {
+        countdown_paused = true;
       }
     }
     
@@ -153,6 +159,14 @@ void handleButtons() {
     }
     
     reset_debounce = millis();
+  }
+  
+  if (digitalRead(SW_ROTARY_ENCODER) == LOW && millis() - rotary_encoder_button_debounce >= DEBOUNCE_TIME) {
+    if (alarm_playing) {
+      stopAlarm();
+    }
+    
+    rotary_encoder_button_debounce = millis();
   }
 }
 
@@ -172,6 +186,7 @@ void handleAlarm() {
     if (time <= 0) {
       counting = false;
       alarm_playing = true;
+      countdown_paused = false;
     }
   }
   
@@ -264,11 +279,13 @@ int getTimeSet(int encoderPos) {
 
 void resetRotaryEncoder() {
   rotaryEncoderPos = 0;
+  countdown_paused = false;
   updateClockDisplay();
 }
 
 void stopAlarm() {
   alarm_playing = false;
+  countdown_paused = false;
   noTone(BUZZER_PIN);
   pinMode(BUZZER_PIN, INPUT_PULLUP);//set to input pullup, because otherwhise the delay generates a frequency
   
